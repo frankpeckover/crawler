@@ -9,10 +9,16 @@ public class Cell
     public CELLTYPE type;
     public int row, col;
 
-    public Cell(int row, int col, CELLTYPE type=CELLTYPE.EMPTY) 
+    public Cell(int col, int row, CELLTYPE type=CELLTYPE.EMPTY) 
     {
         this.row = row;
         this.col = col;
         this.type = type;
     }
+
+    public override string ToString()
+    {
+        return this.col + " : " + this.row;
+    }
+
 }

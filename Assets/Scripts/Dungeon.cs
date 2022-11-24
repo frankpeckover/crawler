@@ -3,12 +3,14 @@ using System.Collections;
 using System;
 
 public class Region {
+    public int id;
     public Cell[] cells;
     public List<Cell> edges;
     public (Cell edge, Cell otherEdge) connection;
 
-    public Region() 
+    public Region(int id) 
     {
+        this.id = id;
         this.edges = new List<Cell>();
     }
 
@@ -30,7 +32,7 @@ public class Dungeon
     private int iterations;
     private int minRegionSize;
 
-    public Dungeon(int rows, int cols, int percentageFill, int activeRequirement, int iterations, int minRegionSize) 
+    public Dungeon(int cols, int rows, int percentageFill, int activeRequirement, int iterations, int minRegionSize) 
     {
         this.rows = rows;
         this.cols = cols;
@@ -41,7 +43,7 @@ public class Dungeon
 
         this.grid = new Cell[cols, rows];
         this.initialiseGrid();
-        this.randomiseGrid();
+        
         for (int i = 0; i < this.iterations; i++)
         {
             this.grid = this.smoothGrid();
@@ -52,15 +54,58 @@ public class Dungeon
 
         this.wallRegions = processRegions(this.wallRegions, CELLTYPE.EMPTY);
         this.emptyRegions = processRegions(this.emptyRegions, CELLTYPE.WALL);
+        this.getRegionEdges();
+        this.getClosestRegionEdges();
 
-        this.getEdgeCells();
-        
+        while (this.emptyRegions.Count > 1)
+        {
+            this.emptyRegions = getRegions(CELLTYPE.EMPTY);
+            this.getRegionEdges();
+            this.getClosestRegionEdges();
+            this.connectRegions();
+        }
     }
 
     public int[] getSize()
     {
-        int[] size = {this.rows, this.cols};
+        int[] size = {this.cols, this.rows};
         return size;
+    }
+
+    private void initialiseGrid() 
+    {
+        System.Random random = new System.Random();
+        for (int col = 0; col < cols; col++) 
+        {
+            for (int row = 0; row < rows; row++) 
+            {
+                if (row == 0 || col == 0 || row == rows - 1 || col == cols - 1) 
+                {
+                    this.grid[col, row] = new Cell(col, row, CELLTYPE.WALL);
+                }
+                else 
+                {
+                    if (random.Next(0, 101) < this.percentageFill) 
+                    {
+                        this.grid[col, row] = new Cell(col, row, CELLTYPE.WALL);
+                    } 
+                    else 
+                    {
+                        this.grid[col, row] = new Cell(col, row, CELLTYPE.EMPTY);
+                    }
+                }
+            }
+        }
+    }
+
+    private Cell[,] smoothGrid() 
+    {
+        Cell[,] newGrid = this.grid;
+        foreach (Cell cell in newGrid)
+        {
+            cell.type = computeNewCellType(cell);
+        }
+        return newGrid;
     }
 
     private List<Region> processRegions(List<Region> regions, CELLTYPE changeTo)
@@ -84,7 +129,7 @@ public class Dungeon
         return regions;
     }
 
-    public void getEdgeCells()
+    private List<Region> getRegionEdges()
     {
         foreach (Region region in this.emptyRegions)
         {
@@ -100,36 +145,81 @@ public class Dungeon
                 }
             }
         }
+        return this.emptyRegions;
     }
 
-    private void connectRegions()
+    public List<Region> connectRegions()
     {
+        System.Random random = new System.Random();
         foreach (Region region in emptyRegions)
         {
-            int x = region.connection.otherEdge.col - region.connection.edge.col;
-            float yDist = region.connection.otherEdge.row - region.connection.edge.row;
-            float distance = MathF.Pow(x, 2) + MathF.Pow(yDist, 2);
+            int xDist = region.connection.otherEdge.col - region.connection.edge.col + 4;
+            int yDist = region.connection.otherEdge.row - region.connection.edge.row + 4;
+
+            this.convertNeighboursToType(region.connection.otherEdge, CELLTYPE.EMPTY);
+
+            for (int total = System.Math.Abs(xDist) + System.Math.Abs(yDist); total >= 0; total--)
+            {
+                if (System.Math.Abs(xDist) > 0 && System.Math.Abs(yDist) > 0)
+                {
+                    if (random.Next(0, 101) < 50) 
+                    {
+                        xDist = xDist > 0 ? --xDist : ++xDist;
+                    } else 
+                    {
+                        yDist = yDist > 0 ? --yDist : ++yDist;
+                    }
+                }
+                else if (System.Math.Abs(xDist) > 0)
+                {
+                    xDist = xDist > 0 ? --xDist : ++xDist;
+                }
+                else 
+                {
+                    yDist = yDist > 0 ? --yDist : ++yDist;
+                }
+                Cell cellToChange = this.grid[region.connection.edge.col + xDist, region.connection.edge.row + yDist];
+                this.convertNeighboursToType(cellToChange, CELLTYPE.EMPTY);
+
+            }
+        }
+        return this.emptyRegions;
+    }
+
+    private void convertNeighboursToType(Cell cell, CELLTYPE type)
+    {
+        cell.type = type;
+        Cell[] neighbours = this.getNeighbours(cell, 1, true);
+        foreach (Cell neighbour in neighbours)
+        {
+            neighbour.type = type;
         }
     }
 
-    private void findClosestEdges()
-    {
-        float closest = 999f;
-        
+    private List<Region> getClosestRegionEdges()
+    {        
         foreach (Region region in this.emptyRegions)
         {
-            Cell closestOtherEdge = region.cells[0];
+            float closest = 999f;
             Cell closestEdge = region.cells[0];
+            Cell closestOtherEdge = region.cells[0];
             foreach (Region otherRegion in this.emptyRegions)
             {
-                if (region.cells != otherRegion.cells) {
+                if (region.id == otherRegion.id) 
+                {
+                    break;
+                } 
+                else 
+                {
                     foreach (Cell edge in region.edges)
                     {
+                        if (edge.col % 4 == 0) { continue; }
                         foreach (Cell otherEdge in otherRegion.edges)
                         {
-                            float xDist = otherEdge.col - edge.col;
-                            float yDist = otherEdge.row - edge.row;
-                            float distance = MathF.Pow(xDist, 2) + MathF.Pow(yDist, 2);
+                            if (otherEdge.row % 4 == 0) { continue; }
+                            int xDist = otherEdge.col - edge.col;
+                            int yDist = otherEdge.row - edge.row;
+                            float distance = (float)(Math.Pow(xDist, 2) + Math.Pow(yDist, 2));
 
                             if (distance < closest)
                             {
@@ -143,46 +233,7 @@ public class Dungeon
             }
             region.createConnection(closestEdge, closestOtherEdge);
         }
-    }
-
-    private void initialiseGrid() 
-    {
-        for (int col = 0; col < cols; col++) 
-        {
-            for (int row = 0; row < cols; row++) 
-            {
-                if (row == 0 || col == 0 || row == cols - 1 || col == rows - 1) 
-                {
-                    this.grid[col, row] = new Cell(col, row, CELLTYPE.WALL);
-                }
-                else 
-                {
-                    this.grid[col, row] = new Cell(row, col, CELLTYPE.EMPTY);
-                }
-            }
-        }
-    }
-
-    private void randomiseGrid() 
-    {
-        System.Random random = new System.Random();
-        foreach (Cell cell in this.grid) 
-        {
-            if (random.Next(0, 101) < this.percentageFill) 
-            {
-                cell.type = CELLTYPE.WALL;
-            }
-        }
-    }
-
-    private Cell[,] smoothGrid() 
-    {
-        Cell[,] newGrid = this.grid;
-        foreach (Cell cell in newGrid)
-        {
-            cell.type = computeNewCellType(cell);
-        }
-        return newGrid;
+        return this.emptyRegions;
     }
 
     private CELLTYPE computeNewCellType(Cell cell) 
@@ -219,16 +270,11 @@ public class Dungeon
                 {
                     if (cell.row + y >= 0 && cell.row + y < this.rows)
                     {
-                        if (x == 0 || y == 0)
-                        {
-                            if (x == 0 && y == 0)
-                            {
-                            }
-                            else
-                            {
-                                neighbours.Add(this.grid[cell.col + x, cell.row + y]);
-                            }
-                        } 
+                        if (x == 0 && y == 0) { continue; } 
+                        if (x == 0 || y == 0) 
+                        { 
+                            neighbours.Add(this.grid[cell.col + x, cell.row + y]); 
+                        }
                         else if (addDiagonals)
                         {
                             neighbours.Add(this.grid[cell.col + x, cell.row + y]);
@@ -245,7 +291,7 @@ public class Dungeon
         List<Cell> regionCells = new List<Cell>();
         List<Cell> visited = new List<Cell>();
         Queue<Cell> queue = new Queue<Cell>();
-        queue.Enqueue(this.grid[startCell.col, startCell.row]);
+        queue.Enqueue(startCell);
 
         while (queue.Count > 0)
         {
@@ -275,7 +321,7 @@ public class Dungeon
         {
             if (visited.Contains(cell) == false && cell.type == cellType)
             {
-                Region region = new Region();
+                Region region = new Region(cell.col * cell.row);
                 region.cells = getRegionCells(cell, cellType);
                 regions.Add(region);
 
